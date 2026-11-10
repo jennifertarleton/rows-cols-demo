@@ -62,6 +62,7 @@
 
     .line.on { background: #fff1cc; border-left-color: var(--gold); }
     .line.bug { background: #fbe1e3; border-left-color: var(--red); }
+    .line .comment { color: var(--muted); }
 
     .tok { border-radius: 4px; padding: 0 2px; transition: background 0.3s, color 0.3s, opacity 0.3s; }
     .tok.win { background: var(--gold); color: var(--ink); font-weight: 700; }
@@ -108,8 +109,21 @@
     .numbers { position: relative; margin-bottom: 8px; }
     .numbers div { text-align: center; font-family: Consolas, monospace; font-size: 0.75rem; color: var(--blue); }
 
-    .cards { position: relative; row-gap: 10px; min-height: 96px; transition: opacity 0.4s; }
-    .cards.hide { opacity: 0; }
+    .groups { position: relative; display: flex; flex-direction: column; gap: 22px; min-height: 96px; transition: opacity 0.4s; }
+    .groups.hide { opacity: 0; }
+
+    .cards { row-gap: 10px; }
+
+    /* Outline (not border) so the cards stay lined up with the 12 slots */
+    .group.framed .cards { outline: 3px dashed var(--blue); outline-offset: 5px; border-radius: 6px; }
+
+    .group-label {
+      font-family: Consolas, monospace;
+      font-weight: 700;
+      color: var(--blue);
+      margin: 0 0 10px;
+      font-size: 0.9rem;
+    }
 
     .card {
       border: 3px solid var(--ink);
@@ -124,6 +138,7 @@
     .card .name { font-weight: 700; }
     .card .span { font-family: Consolas, monospace; color: var(--muted); font-size: 0.9rem; }
     .card.bug { border-color: var(--red); }
+    .card.visit { background: #f7f1e9; }
 
     .ask {
       position: absolute;
@@ -145,12 +160,13 @@
       min-height: 1.6em;
       text-align: center;
       font-family: Consolas, monospace;
-      font-size: 1.25rem;
-      transition: opacity 0.4s;
+      font-size: 1.2rem;
+      line-height: 1.6;
     }
 
     .tally .full { color: var(--green); font-weight: 700; }
     .tally .short { color: var(--red); font-weight: 700; }
+    .tally .who { color: var(--blue); font-weight: 700; }
 
     .caption {
       max-width: 900px;
@@ -201,7 +217,7 @@
         <div class="grid-wrap">
           <div class="slots" id="slots"></div>
           <div class="numbers" id="numbers"></div>
-          <div class="cards" id="cards"></div>
+          <div class="groups" id="groups"></div>
           <div class="ask" id="ask">?</div>
         </div>
       </div>
@@ -222,7 +238,12 @@
     const menu = [
       { emoji: "🌮", name: "Taco" },
       { emoji: "🌯", name: "Burrito" },
-      { emoji: "🧀", name: "Nachos" }
+      { emoji: "🧀", name: "Nachos" },
+      { emoji: "🍩", name: "Churro" }
+    ];
+    const visit = [
+      { emoji: "📍", name: "Where", visit: true },
+      { emoji: "🕒", name: "When", visit: true }
     ];
 
     // Bootstrap's breakpoints: a class with this size works from this width up.
@@ -246,54 +267,64 @@
       return best || { span: 12, index: -1 };
     }
 
+    function hasTypo(classes) {
+      return classes.split(" ").some(function (name) { return name.indexOf("col") === 0 && !readClass(name); });
+    }
+
+    // A row div: a label and its items, each item with its classes.
+    function row(label, items, cls) {
+      return { label: label, items: items.slice(0, cls.length).map(function (item, n) {
+        return { emoji: item.emoji, name: item.name, visit: item.visit, cls: cls[n] };
+      }) };
+    }
+    function menuRow(cls) { return row("Menu", menu, cls); }
+
     const A = "col-md-4";
     const B = "col-md-6";
     const M = "col-12 col-md-6 col-lg-4";
     const BUG = "col-12 col-md-6 col-lg4";
 
-    // Each step: caption, screen width, each card's classes, and what to show.
+    // Each step: caption, screen width, the row divs, and what to show.
     const steps = [
       { text: "Bootstrap splits every <code>row</code> into <strong>12 equal columns</strong>. The cards inside the row share them.",
-        width: 1000, cls: [A, A, A], line: 0, empty: true },
-      { text: "<code>col-md-4</code> takes <strong>4 of the 12</strong>. 4 + 4 + 4 = 12, so 3 cards fit in one row.",
-        width: 1000, cls: [A, A, A], active: true },
-      { text: "Change every card to <code>col-md-6</code>. <strong>Predict:</strong> how many cards fit in the first row? Type it in the chat.",
-        width: 1000, cls: [B, B, B], predict: true },
-      { text: "6 + 6 = 12. The row is full, so Nachos <strong>wraps</strong> to a new row. 2 per row.",
-        width: 1000, cls: [B, B, B], active: true },
-      { text: "Back to <code>col-md-4</code>, on a 400px phone. <code>md</code> means <strong>768px and wider</strong>. Too narrow, so it switches off and each card takes the whole row.",
-        width: 400, cls: [A, A, A], active: true },
+        width: 1000, rows: [menuRow([A, A, A])], line: 0, empty: true },
+      { text: "<code>col-md-4</code> takes <strong>4 of the 12</strong>. 4 + 4 + 4 = 12, so 3 cards fit on one line.",
+        width: 1000, rows: [menuRow([A, A, A])], active: true },
+      { text: "Change every card to <code>col-md-6</code>. <strong>Predict:</strong> how many cards fit on the first line? Type it in the chat.",
+        width: 1000, rows: [menuRow([B, B, B])], predict: true },
+      { text: "6 + 6 = 12. The line is full, so Nachos <strong>wraps</strong> to a new line. Same <code>row</code> div, 2 per line.",
+        width: 1000, rows: [menuRow([B, B, B])], active: true },
+      { text: "Back to <code>col-md-4</code>, and add a 4th card: Churro. 4 + 4 + 4 + 4 = 16, more than 12. <strong>Predict:</strong> do we need a second <code>row</code> div?",
+        width: 1000, rows: [menuRow([A, A, A, A])], line: 4, predict: true },
+      { text: "<strong>No!</strong> One <code>row</code> div can hold as many cards as you like. When a line is full, the next card <strong>wraps</strong> by itself.",
+        width: 1000, rows: [menuRow([A, A, A, A])], line: 4, active: true, framed: true },
+      { text: "You need a <strong>second <code>row</code> div</strong> for a <strong>different group</strong>, like Visit us. A new row always starts on a new line, even when the line above has space left.",
+        width: 1000, rows: [menuRow([A, A, A, A]), row("Visit us", visit, [B, B])], line: 8, active: true, framed: true },
+      { text: "Back to 3 cards, on a 400px phone. <code>md</code> means <strong>768px and wider</strong>. Too narrow, so <code>col-md-4</code> switches off and each card takes the whole line.",
+        width: 400, rows: [menuRow([A, A, A])], active: true },
       { text: "So we give each size its own class: <code>col-12 col-md-6 col-lg-4</code>. At 400px only <code>col-12</code> works: all 12, full width.",
-        width: 400, cls: [M, M, M], active: true },
+        width: 400, rows: [menuRow([M, M, M])], active: true },
       { text: "At 800px, <code>col-md-6</code> takes over (768 and up). 6 of 12 is half: <strong>2 across</strong>.",
-        width: 800, cls: [M, M, M], active: true },
+        width: 800, rows: [menuRow([M, M, M])], active: true },
       { text: "At 1000px, <code>col-lg-4</code> takes over (992 and up). 4 of 12 is a third: <strong>3 across</strong>.",
-        width: 1000, cls: [M, M, M], active: true },
+        width: 1000, rows: [menuRow([M, M, M])], active: true },
       { text: "At 1300px? Still <code>col-lg-4</code>. A class keeps working on <strong>every bigger screen</strong> too.",
-        width: 1300, cls: [M, M, M], active: true },
+        width: 1300, rows: [menuRow([M, M, M])], active: true },
       { text: "<strong>Bug hunt:</strong> Burrito's class has a typo. Spot it, then predict the layout at 1000px. Type it in the chat.",
-        width: 1000, cls: [M, BUG, M], line: 2, predict: true },
+        width: 1000, rows: [menuRow([M, BUG, M])], line: 2, predict: true },
       { text: "<code>col-lg4</code> is missing a dash, so Bootstrap skips it. Burrito stays at <code>col-md-6</code>: 4 + 6 = 10, and Nachos won't fit. <strong>Check every dash.</strong>",
-        width: 1000, cls: [M, BUG, M], line: 2, bug: true, active: true }
+        width: 1000, rows: [menuRow([M, BUG, M])], line: 2, bug: true, active: true }
     ];
 
     function el(id) { return document.getElementById(id); }
 
-    // Build the 12 slots, the numbers, and the cards once.
+    // Build the 12 slots and the numbers once.
     for (let n = 1; n <= 12; n++) {
       el("slots").appendChild(document.createElement("div"));
       const num = document.createElement("div");
       num.textContent = n;
       el("numbers").appendChild(num);
     }
-    menu.forEach(function (item, n) {
-      const card = document.createElement("div");
-      card.className = "card";
-      card.id = "card-" + n;
-      card.innerHTML = '<div class="emoji">' + item.emoji + '</div><div class="name">' + item.name +
-        '</div><div class="span" id="span-' + n + '"></div>';
-      el("cards").appendChild(card);
-    });
 
     function classHtml(classes, width, s) {
       const win = winner(classes, width);
@@ -309,19 +340,19 @@
       }).join(" ");
     }
 
-    // Pack the spans into rows the way the browser does: if it doesn't fit, start a new row.
+    // Pack the spans into lines the way the browser does: if it doesn't fit, start a new line.
     function tallyHtml(spans) {
-      const rows = [];
+      const lines = [];
       spans.forEach(function (span) {
-        const last = rows[rows.length - 1];
+        const last = lines[lines.length - 1];
         const used = last ? last.reduce(function (a, b) { return a + b; }, 0) : 12;
-        if (used + span > 12) rows.push([span]);
+        if (used + span > 12) lines.push([span]);
         else last.push(span);
       });
-      return rows.map(function (row, n) {
-        const sum = row.reduce(function (a, b) { return a + b; }, 0);
-        const sumText = row.length > 1 ? row.join(" + ") + " = " + sum : String(sum);
-        return "Row " + (n + 1) + ": <span class=\"" + (sum === 12 ? "full" : "short") + "\">" + sumText + "</span>";
+      return lines.map(function (line, n) {
+        const sum = line.reduce(function (a, b) { return a + b; }, 0);
+        const sumText = line.length > 1 ? line.join(" + ") + " = " + sum : String(sum);
+        return "Line " + (n + 1) + ": <span class=\"" + (sum === 12 ? "full" : "short") + "\">" + sumText + "</span>";
       }).join(" &nbsp;·&nbsp; ");
     }
 
@@ -329,13 +360,18 @@
 
     function show() {
       const s = steps[step];
+      const many = s.rows.length > 1;
 
       // Code
-      const lines = ['&lt;div class="row g-4"&gt;'];
-      menu.forEach(function (item, n) {
-        lines.push('  &lt;div class="' + classHtml(s.cls[n], s.width, s) + '"&gt;' + item.emoji + " " + item.name + "&lt;/div&gt;");
+      const lines = [];
+      s.rows.forEach(function (r) {
+        if (many) lines.push('<span class="comment">&lt;!-- ' + r.label + " --&gt;</span>");
+        lines.push('&lt;div class="row g-4"&gt;');
+        r.items.forEach(function (item) {
+          lines.push('  &lt;div class="' + classHtml(item.cls, s.width, s) + '"&gt;' + item.emoji + " " + item.name + "&lt;/div&gt;");
+        });
+        lines.push("&lt;/div&gt;");
       });
-      lines.push("&lt;/div&gt;");
       el("code").innerHTML = lines.map(function (html, n) {
         const mark = n === s.line ? (s.bug ? " bug" : " on") : "";
         return '<div class="line' + mark + '">' + html + "</div>";
@@ -345,17 +381,40 @@
       el("window").style.width = (s.width / 1300 * 100) + "%";
       el("size").textContent = "Screen: " + s.width + "px";
 
-      const spans = s.cls.map(function (classes) { return winner(classes, s.width).span; });
-      spans.forEach(function (span, n) {
-        el("card-" + n).style.gridColumn = "span " + span;
-        el("span-" + n).textContent = span + " of 12";
-        el("card-" + n).classList.toggle("bug", !!s.bug && n === 1);
+      const groups = el("groups");
+      groups.innerHTML = "";
+      const tallies = [];
+      s.rows.forEach(function (r, g) {
+        const group = document.createElement("div");
+        group.className = "group" + (s.framed ? " framed" : "");
+        if (s.framed) {
+          const label = document.createElement("div");
+          label.className = "group-label";
+          label.textContent = 'row div ' + (g + 1) + ": " + r.label;
+          group.appendChild(label);
+        }
+        const cards = document.createElement("div");
+        cards.className = "cards";
+        const spans = [];
+        r.items.forEach(function (item) {
+          const span = winner(item.cls, s.width).span;
+          spans.push(span);
+          const card = document.createElement("div");
+          card.className = "card" + (item.visit ? " visit" : "") + (s.bug && hasTypo(item.cls) ? " bug" : "");
+          card.style.gridColumn = "span " + span;
+          card.innerHTML = '<div class="emoji">' + item.emoji + '</div><div class="name">' + item.name +
+            '</div><div class="span">' + span + " of 12</div>";
+          cards.appendChild(card);
+        });
+        group.appendChild(cards);
+        groups.appendChild(group);
+        tallies.push((many ? '<span class="who">' + r.label + " row:</span> " : "") + tallyHtml(spans));
       });
 
       const hidden = s.empty || s.predict;
-      el("cards").classList.toggle("hide", !!hidden);
+      groups.classList.toggle("hide", !!hidden);
       el("ask").classList.toggle("show", !!s.predict);
-      el("tally").innerHTML = hidden ? "" : tallyHtml(spans);
+      el("tally").innerHTML = hidden ? "" : tallies.join("<br>");
 
       el("caption").innerHTML = s.text;
       el("count").textContent = (step + 1) + " / " + steps.length;
